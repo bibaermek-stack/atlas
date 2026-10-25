@@ -202,3 +202,4 @@ if (q.get('explode')) { state.explode = +q.get('explode'); $('#exp').value = sta
 if (q.get('fire')) { $('#evt').value = q.get('fire'); $('#fire').click(); }
 if (q.get('xray')) { $('#bX').click(); }
 if (q.get('ff')) for (let t = 0; t < +q.get('ff'); t += 0.05) sim.update(0.05);
+if (q.get('only')) { for (const k of Object.keys(SYSTEMS)) state.hidden[k] = !q.get('only').split(',').includes(k); applyStyle(); }

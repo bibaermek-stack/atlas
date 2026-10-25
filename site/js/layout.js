@@ -84,18 +84,35 @@ export function buildLayout(dimsOf) {
     add(id, 'toroid', 'Тороид сақинасы (магнит орамдары)', T(0, 0, z * SP), [0, 0, z * 0.75], { tint: 0xc4c8cf, abs: true });
   add(M.ring5, 'toroid', 'Тороидтың ортаңғы сақинасы', new THREE.Matrix4(), [0, -60, 0], { abs: true });
 
-  // ---------- Barrel muon chambers (3 layers x 16 sectors) ----------
-  const layer = (big, small, rBig, rSmall, name, mag, z0 = 0) => {
+  // ---------- Barrel muon chambers (3 layers x 16 sectors, edge to edge) ----------
+  // Large/small chambers alternate; chaining their widths with 22.5 deg turns gives a closed equiangular
+  // 16-gon, so neighbouring chambers touch exactly (like the flat rows of the real model).
+  const ngon = (wL, wS, thick) => {
+    const w = k => (k % 2 === 0 ? wL : wS);
+    const v = [[0, 0]];
     for (let k = 0; k < N; k++) {
-      const large = k % 2 === 0, id = large ? big : small, r = large ? rBig : rSmall;
-      const a = k * step + step / 2;
-      const m = mul(Rz(a), T(0, r, z0), slabMatrix(dimsOf(id)));
-      add(id, 'muon', name, m, [-Math.sin(a) * mag, Math.cos(a) * mag, 0], { abs: true });
+      const ang = k * step, [x, y] = v[k];
+      v.push([x + w(k) * Math.cos(ang), y + w(k) * Math.sin(ang)]);
     }
+    const cx = v.slice(0, N).reduce((t, p) => t + p[0], 0) / N, cy = v.slice(0, N).reduce((t, p) => t + p[1], 0) / N;
+    return Array.from({ length: N }, (_, k) => {
+      const ang = k * step, nx = Math.sin(ang), ny = -Math.cos(ang);          // outward normal of edge k
+      const mx = (v[k][0] + v[k + 1][0]) / 2 - cx + nx * thick / 2, my = (v[k][1] + v[k + 1][1]) / 2 - cy + ny * thick / 2;
+      return { x: mx, y: my, rot: ang };
+    });
   };
-  layer(M.inL, M.inS, 56, 52, 'Мюон камерасы — ішкі қабат (BI)', 30);
-  layer(M.midL, M.midS, 84, 78, 'Мюон камерасы — ортаңғы қабат (BM)', 70);
-  layer(M.slabL, M.slabS, 118, 104, 'Мюон камерасы — сыртқы қабат (BO)', 115);
+  const layer = (big, small, name, mag, thick, shift = 0) => {
+    const wL = dimsOf(big).slice().sort((a, b) => a - b)[1], wS = dimsOf(small).slice().sort((a, b) => a - b)[1];
+    ngon(wL, wS, thick).forEach((e, k) => {
+      const id = k % 2 === 0 ? big : small;
+      const m = mul(T(e.x, e.y, 0), Rz(e.rot), slabMatrix(dimsOf(id)));
+      const l = Math.hypot(e.x, e.y);
+      add(id, 'muon', name, m, [e.x / l * mag, e.y / l * mag, 0], { abs: true });
+    });
+  };
+  layer(M.inL, M.inS, 'Мюон камерасы — ішкі қабат (BI)', 30, 8.8);
+  layer(M.midL, M.midS, 'Мюон камерасы — ортаңғы қабат (BM)', 70, 7);
+  layer(M.slabL, M.slabS, 'Мюон камерасы — сыртқы қабат (BO)', 115, 4);
 
   // ---------- Barrel toroid rails and end feet ----------
   for (let k = 0; k < 8; k++) {
@@ -113,20 +130,19 @@ export function buildLayout(dimsOf) {
   for (const s of [-1, 1])
     add(s > 0 ? M.ect : M.ect2, 'ect', 'Торец тороиды (End-cap)', mul(T(0, 0, s * 103), Rz(-Math.PI / 2)), [0, 0, s * 75], { abs: true });
 
-  // ---------- Small wheels: disc + 16 chambers ----------
+  // ---------- Small wheels: notched support disc + 8-sector chamber star ----------
   for (const s of [-1, 1]) {
-    add(M.swDisc, 'sw', 'Кіші дөңгелек (Small Wheel)', T(0, 0, s * 75), [0, 0, s * 120], { abs: true });
-    for (let k = 0; k < N; k++) {
-      const a = k * step + step / 2, id = k % 2 ? 'a1bfa020' : '5d5de22c';
-      add(id, 'sw', 'Small Wheel камерасы', mul(Rz(a), T(0, 30, s * 79), plateMatrix(dimsOf(id))), [-Math.sin(a) * 15, Math.cos(a) * 15, s * 135], { abs: true });
-    }
+    add(M.swDisc, 'sw', 'Кіші дөңгелек (Small Wheel) — тірек диск', T(0, 0, s * 74), [0, 0, s * 120], { abs: true });
+    add('6748c2e0', 'sw', 'Кіші дөңгелек — сектор камералары', T(0, 0, s * 78.5), [0, 0, s * 150], { abs: true, tint: 0x9a3f20 });
   }
-  // ---------- Big wheels: one ring of 16 sector chambers on two wheels per side ----------
+  // ---------- Big wheels: two rows of 16 sector chambers on two wheels per side ----------
   for (const s of [-1, 1]) for (const z of [142, 160]) {
     for (let k = 0; k < N; k++) {
-      const a = k * step + step / 2, big = k % 2 === 0, id = big ? '894a4179' : 'f7b50870', r = 82;
-      const sc = new THREE.Matrix4().makeScale(r / 62 * (big ? 1 : 1.5), 1.9, 1);
-      add(id, 'bw', 'Үлкен дөңгелек камерасы', mul(Rz(a), T(0, r, s * z), plateMatrix(dimsOf(id)), sc), [-Math.sin(a) * 30, Math.cos(a) * 30, s * (z > 150 ? 105 : 70)], { abs: true });
+      const a = k * step + step / 2, big = k % 2 === 0, id = big ? '894a4179' : 'f7b50870';
+      for (const r of [62, 96]) {
+        const sc = new THREE.Matrix4().makeScale(1, r / 100, 1);
+        add(id, 'bw', 'Үлкен дөңгелек камерасы', mul(Rz(a), T(0, r, s * z), Rz(Math.PI / 2), sc), [-Math.sin(a) * 30, Math.cos(a) * 30, s * (z > 150 ? 105 : 70)], { abs: true });
+      }
     }
   }
   return parts;
